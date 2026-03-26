@@ -22,17 +22,8 @@ def detect_instance_home():
     if env_home := os.getenv('CLAUDE_HOME'):
         return Path(env_home)
     
-    candidates = [
-        Path.home() / "Substrate",
-        Path.home() / "Claude",
-        Path.home() / "continuity-bridge_tallest-anchor"
-    ]
-    
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    
-    return None
+    # Default to ~/.claude if no environment variable
+    return Path.home() / '.claude'
 
 
 def main():
@@ -47,11 +38,8 @@ def main():
     print("  2. Session cookie (from Application tab)")
     print()
     
-    # Get instance home
+    # Get instance home (or use default ~/.claude)
     instance_home = detect_instance_home()
-    if not instance_home:
-        print("ERROR: Cannot locate INSTANCE_HOME", file=sys.stderr)
-        return 1
     
     # Get organization ID
     print("From Chrome DevTools Network tab:")

@@ -63,20 +63,8 @@ def detect_instance_home():
     if env_home := os.getenv('CLAUDE_HOME'):
         return Path(env_home)
     
-    # Try common locations
-    candidates = [
-        Path.home() / "Substrate",
-        Path.home() / "Claude",
-        Path.home() / "continuity-bridge_tallest-anchor"
-    ]
-    
-    for candidate in candidates:
-        if candidate.exists():
-            state_file = candidate / '.claude' / 'logs' / 'limit-tracker-state.json'
-            if state_file.exists():
-                return candidate
-    
-    return None
+    # Default to ~/.claude if no environment variable
+    return Path.home() / '.claude'
 
 
 class UsageData:
@@ -337,11 +325,8 @@ class HeadroomApp(Gtk.Application):
     def __init__(self):
         super().__init__(application_id='com.continuitybridge.headroom')
         
-        # Detect INSTANCE_HOME
+        # Detect INSTANCE_HOME (or use default ~/.claude)
         self.instance_home = detect_instance_home()
-        if not self.instance_home:
-            print("ERROR: Cannot locate INSTANCE_HOME", file=sys.stderr)
-            sys.exit(1)
         
         self.state_file = self.instance_home / '.claude' / 'logs' / 'limit-tracker-state.json'
         self.usage_data = UsageData(self.state_file)
