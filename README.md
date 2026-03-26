@@ -184,7 +184,7 @@ A: No, only aggregate usage numbers (percentages and reset times).
 A: GTK4 system tray support is best on Linux. Windows/Mac support is possible but not implemented yet.
 
 **Q: My desktop doesn't show system tray icons!**  
-A: The window still works! Just keep it open. See [Troubleshooting](docs/TROUBLESHOOTING.md).
+A: Some desktops (like GNOME, Cinnamon) don't support AppIndicator by default. headroom will run in window-only mode - just keep the window open! The auto-sync and notifications still work perfectly. See [Troubleshooting](docs/TROUBLESHOOTING.md).
 
 ---
 

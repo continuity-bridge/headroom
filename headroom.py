@@ -22,13 +22,26 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib, Gdk, Gio
 
 # Try to import AppIndicator for system tray
-# Falls back to status icon if not available
+# Try AyatanaAppIndicator first (modern), then AppIndicator3 (legacy)
+HAS_APPINDICATOR = False
+APPINDICATOR_LIBRARY = None
+APPINDICATOR_ERROR = None
 try:
-    gi.require_version('AppIndicator3', '0.1')
-    from gi.repository import AppIndicator3 as AppIndicator
+    gi.require_version('AyatanaAppIndicator3', '0.1')
+    from gi.repository import AyatanaAppIndicator3 as AppIndicator
     HAS_APPINDICATOR = True
-except (ValueError, ImportError):
-    HAS_APPINDICATOR = False
+    APPINDICATOR_LIBRARY = 'AyatanaAppIndicator3'
+except (ValueError, ImportError) as e:
+    APPINDICATOR_ERROR = f"Ayatana: {e}"
+    try:
+        gi.require_version('AppIndicator3', '0.1')
+        from gi.repository import AppIndicator3 as AppIndicator
+        HAS_APPINDICATOR = True
+        APPINDICATOR_LIBRARY = 'AppIndicator3'
+    except (ValueError, ImportError) as e2:
+        HAS_APPINDICATOR = False
+        APPINDICATOR_LIBRARY = None
+        APPINDICATOR_ERROR = f"Ayatana: {e}, AppIndicator3: {e2}"
 
 
 def detect_instance_home():
@@ -327,7 +340,12 @@ class HeadroomApp(Adw.Application):
         
         # Create system tray indicator
         if HAS_APPINDICATOR and not self.indicator:
+            print(f"✓ Using {APPINDICATOR_LIBRARY} for system tray")
             self.setup_indicator()
+        elif not HAS_APPINDICATOR:
+            print("Note: System tray not available on this desktop environment.")
+            print(f"Debug: {APPINDICATOR_ERROR}")
+            print("Running in window-only mode. Keep this window open to monitor usage.")
         
         # Show window on first activation
         self.window.present()
