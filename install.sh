@@ -32,13 +32,13 @@ if [ "$PKG_MGR" != "unknown" ]; then
     
     case "$PKG_MGR" in
         apt)
-            $INSTALL_CMD python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-appindicator3-0.1
+            $INSTALL_CMD python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1
             ;;
         pacman)
-            $INSTALL_CMD python-gobject gtk4 libadwaita libappindicator-gtk3
+            $INSTALL_CMD python-gobject gtk3 libayatana-appindicator
             ;;
         dnf)
-            $INSTALL_CMD python3-gobject gtk4 libadwaita libappindicator-gtk3
+            $INSTALL_CMD python3-gobject gtk3 libayatana-appindicator-gtk3
             ;;
     esac
 fi
