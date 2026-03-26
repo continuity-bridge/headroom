@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""
+claude-auto-sync - Automatically fetch usage from claude.ai API
+
+Reads your claude.ai session cookie and fetches real usage data.
+
+Requirements:
+    - Valid claude.ai session (logged in to claude.ai in browser)
+    - Session cookie from browser
+
+Author: Uncle Tallest & Vector
+Created: 2026-03-26
+"""
+
+import os
+import sys
+import json
+import requests
+from pathlib import Path
+from datetime import datetime
+
+
+def detect_instance_home():
+    """Detect INSTANCE_HOME directory"""
+    if env_home := os.getenv('INSTANCE_HOME'):
+        return Path(env_home)
+    if env_home := os.getenv('CLAUDE_HOME'):
+        return Path(env_home)
+    
+    candidates = [
+        Path.home() / "Substrate",
+        Path.home() / "Claude",
+        Path.home() / "continuity-bridge_tallest-anchor"
+    ]
+    
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    
+    return None
+
+
+def get_organization_id_from_cookie(cookie_file):
+    """Extract organization ID from stored cookie"""
+    if not cookie_file.exists():
+        return None
+    
+    with open(cookie_file) as f:
+        data = json.load(f)
+        return data.get('organization_id')
+
+
+def fetch_usage(organization_id, cookie_string):
+    """Fetch usage from claude.ai API"""
+    
+    url = f"https://claude.ai/api/organizations/{organization_id}/usage"
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://claude.ai/settings/usage',
+        'Cookie': cookie_string
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Failed to fetch usage: {e}", file=sys.stderr)
+        return None
+
+
+def parse_reset_time(iso_string):
+    """Parse ISO timestamp to human-readable format"""
+    try:
+        dt = datetime.fromisoformat(iso_string.replace('+00:00', ''))
+        now = datetime.now()
+        diff = dt - now
+        
+        if diff.total_seconds() < 3600:
+            minutes = int(diff.total_seconds() / 60)
+            return f"{minutes} min"
+        elif diff.total_seconds() < 86400:
+            hours = int(diff.total_seconds() / 3600)
+            minutes = int((diff.total_seconds() % 3600) / 60)
+            return f"{hours}h {minutes}m"
+        else:
+            return dt.strftime("%a %-I:%M %p")
+    except:
+        return None
+
+
+def update_state(instance_home, usage_data):
+    """Update limit-tracker-state.json with fetched usage"""
+    
+    state_file = instance_home / '.claude' / 'logs' / 'limit-tracker-state.json'
+    
+    # Load or create state
+    if state_file.exists():
+        with open(state_file) as f:
+            state = json.load(f)
+    else:
+        state = {
+            'plan': 'pro',
+            'window_hours': 5,
+            'events': [],
+            'weekly_usage': None
+        }
+    
+    # Extract usage
+    five_hour = usage_data.get('five_hour', {})
+    seven_day = usage_data.get('seven_day', {})
+    
+    session_percent = five_hour.get('utilization', 0)
+    weekly_percent = seven_day.get('utilization', 0)
+    
+    # Update current session
+    limit = 45  # Pro plan limit
+    calculated_used = (session_percent / 100) * limit
+    
+    state['events'] = [{
+        'timestamp': datetime.now().isoformat(),
+        'product': 'chat',
+        'weight': calculated_used,
+        'source': 'auto_sync_from_claude_api'
+    }]
+    
+    # Update session reset time
+    if session_reset := five_hour.get('resets_at'):
+        state['session_reset'] = parse_reset_time(session_reset)
+    
+    # Update weekly usage
+    state['weekly_usage'] = {
+        'percent': weekly_percent,
+        'timestamp': datetime.now().isoformat(),
+        'source': 'auto_sync_from_claude_api'
+    }
+    
+    if weekly_reset := seven_day.get('resets_at'):
+        state['weekly_usage']['reset_time'] = parse_reset_time(weekly_reset)
+    
+    # Save
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(state_file, 'w') as f:
+        json.dump(state, f, indent=2)
+    
+    return {
+        'session_percent': session_percent,
+        'weekly_percent': weekly_percent,
+        'session_reset': state.get('session_reset'),
+        'weekly_reset': state['weekly_usage'].get('reset_time')
+    }
+
+
+def main():
+    print("Claude Auto-Sync")
+    print("=" * 50)
+    print()
+    
+    # Detect instance home
+    instance_home = detect_instance_home()
+    if not instance_home:
+        print("ERROR: Cannot locate INSTANCE_HOME", file=sys.stderr)
+        return 1
+    
+    # Check for stored credentials
+    config_dir = instance_home / '.claude' / 'config'
+    cookie_file = config_dir / 'claude-session.json'
+    
+    if not cookie_file.exists():
+        print("ERROR: No stored session found", file=sys.stderr)
+        print()
+        print("Setup required:")
+        print("  1. Run: claude-setup-session")
+        print("  2. Follow prompts to save your session cookie")
+        print()
+        print("Or use manual sync:")
+        print("  claude-sync-usage 44 60")
+        return 1
+    
+    # Load credentials
+    with open(cookie_file) as f:
+        creds = json.load(f)
+    
+    org_id = creds.get('organization_id')
+    cookie_string = creds.get('cookie_string')
+    
+    if not org_id or not cookie_string:
+        print("ERROR: Invalid session file", file=sys.stderr)
+        print("Run: claude-setup-session to re-configure", file=sys.stderr)
+        return 1
+    
+    # Fetch usage
+    print(f"Fetching usage for organization {org_id[:8]}...")
+    usage_data = fetch_usage(org_id, cookie_string)
+    
+    if not usage_data:
+        print("Failed to fetch usage data", file=sys.stderr)
+        return 1
+    
+    # Update state
+    result = update_state(instance_home, usage_data)
+    
+    print()
+    print("✓ Auto-sync complete!")
+    print(f"  Session: {result['session_percent']}% (resets in {result['session_reset']})")
+    print(f"  Weekly: {result['weekly_percent']}% (resets {result['weekly_reset']})")
+    print()
+    print("  headroom will now show this usage")
+    
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

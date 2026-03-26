@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""
+claude-setup-session - Save claude.ai session for automatic sync
+
+Stores your organization ID and session cookie so claude-auto-sync can
+fetch usage automatically.
+
+Author: Uncle Tallest & Vector
+Created: 2026-03-26
+"""
+
+import os
+import sys
+import json
+from pathlib import Path
+
+
+def detect_instance_home():
+    """Detect INSTANCE_HOME directory"""
+    if env_home := os.getenv('INSTANCE_HOME'):
+        return Path(env_home)
+    if env_home := os.getenv('CLAUDE_HOME'):
+        return Path(env_home)
+    
+    candidates = [
+        Path.home() / "Substrate",
+        Path.home() / "Claude",
+        Path.home() / "continuity-bridge_tallest-anchor"
+    ]
+    
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    
+    return None
+
+
+def main():
+    print("Claude Session Setup")
+    print("=" * 50)
+    print()
+    print("This will store your claude.ai session credentials so")
+    print("claude-auto-sync can fetch usage automatically.")
+    print()
+    print("Required information:")
+    print("  1. Organization ID (from Network tab)")
+    print("  2. Session cookie (from Application tab)")
+    print()
+    
+    # Get instance home
+    instance_home = detect_instance_home()
+    if not instance_home:
+        print("ERROR: Cannot locate INSTANCE_HOME", file=sys.stderr)
+        return 1
+    
+    # Get organization ID
+    print("From Chrome DevTools Network tab:")
+    print("  Look for: /api/organizations/[ORG_ID]/usage")
+    print()
+    org_id = input("Organization ID: ").strip()
+    
+    if not org_id:
+        print("ERROR: Organization ID required", file=sys.stderr)
+        return 1
+    
+    # Get full cookie string
+    print()
+    print("From Chrome DevTools Network tab:")
+    print("  1. Click on the /usage request")
+    print("  2. Go to Headers tab")
+    print("  3. Scroll to Request Headers")
+    print("  4. Find 'cookie:' header")
+    print("  5. Copy the ENTIRE value (it's long!)")
+    print()
+    print("Should look like: sessionKey=sk-ant-sid...; __cf_bm=...; etc")
+    print()
+    cookie_string = input("Cookie string: ").strip()
+    
+    if not cookie_string or 'sessionKey' not in cookie_string:
+        print("ERROR: Valid cookie string required", file=sys.stderr)
+        return 1
+    
+    # Save credentials
+    config_dir = instance_home / '.claude' / 'config'
+    config_dir.mkdir(parents=True, exist_ok=True)
+    
+    cookie_file = config_dir / 'claude-session.json'
+    
+    data = {
+        'organization_id': org_id,
+        'cookie_string': cookie_string,
+        'saved_at': json.dumps(datetime.now().isoformat()) if 'datetime' in dir() else 'unknown'
+    }
+    
+    with open(cookie_file, 'w') as f:
+        json.dump(data, f, indent=2)
+    
+    # Set restrictive permissions
+    os.chmod(cookie_file, 0o600)
+    
+    print()
+    print("✓ Session saved!")
+    print(f"  Location: {cookie_file}")
+    print()
+    print("You can now run:")
+    print("  claude-auto-sync")
+    print()
+    print("To fetch usage automatically!")
+    
+    return 0
+
+
+if __name__ == '__main__':
+    from datetime import datetime
+    sys.exit(main())
