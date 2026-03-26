@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-headroom - System tray Claude usage monitor (GTK3 version)
+headroom - System tray Claude usage monitor
 
 Shows real-time Claude usage limits in your system tray.
 Part of the Continuity Bridge ecosystem.
 
 Author: Uncle Tallest & Vector
 Created: 2026-03-25
-GTK3 Port: 2026-03-26
 """
 
 import os
@@ -18,19 +17,9 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 import gi
-import warnings
-import os
-
-# Suppress GLib deprecation warnings from libayatana-appindicator
-os.environ['PYTHONWARNINGS'] = 'ignore'
-warnings.filterwarnings('ignore')
-
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GLib, Gdk, Gio
-
-# Suppress GLib warnings about deprecated libraries
-import logging
-logging.getLogger('libayatana-appindicator').setLevel(logging.CRITICAL)
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+from gi.repository import Gtk, Adw, GLib, Gdk, Gio
 
 # Try to import AppIndicator for system tray
 # Try AyatanaAppIndicator first (modern), then AppIndicator3 (legacy)
@@ -183,7 +172,6 @@ class HeadroomWindow(Gtk.ApplicationWindow):
         self.set_title("Claude Usage - headroom")
         self.set_default_size(400, 300)
         self.set_resizable(False)
-        self.set_keep_above(True)  # Keep window on top
         
         # Build UI
         self.build_ui()
@@ -202,42 +190,42 @@ class HeadroomWindow(Gtk.ApplicationWindow):
         # Header
         header = Gtk.Label()
         header.set_markup("<span size='large' weight='bold'>Claude Usage Monitor</span>")
-        box.pack_start(header, False, False, 0)
+        box.append(header)
         
         # Usage bar and percentage
         self.percent_label = Gtk.Label()
-        box.pack_start(self.percent_label, False, False, 0)
+        box.append(self.percent_label)
         
         self.progress_bar = Gtk.ProgressBar()
         self.progress_bar.set_show_text(False)
-        box.pack_start(self.progress_bar, False, False, 0)
+        box.append(self.progress_bar)
         
         # Breakdown
         breakdown_label = Gtk.Label()
         breakdown_label.set_markup("<span weight='bold'>Breakdown:</span>")
         breakdown_label.set_xalign(0)
-        box.pack_start(breakdown_label, False, False, 0)
+        box.append(breakdown_label)
         
         self.breakdown_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        box.pack_start(self.breakdown_box, False, False, 0)
+        box.append(self.breakdown_box)
         
         # Reset time
         self.reset_label = Gtk.Label()
         self.reset_label.set_xalign(0)
-        box.pack_start(self.reset_label, False, False, 0)
+        box.append(self.reset_label)
         
         # Weekly usage
         self.weekly_label = Gtk.Label()
         self.weekly_label.set_xalign(0)
-        box.pack_start(self.weekly_label, False, False, 0)
+        box.append(self.weekly_label)
         
         # Status message
         self.status_label = Gtk.Label()
-        self.status_label.set_line_wrap(True)
+        self.status_label.set_wrap(True)
         self.status_label.set_xalign(0)
-        box.pack_start(self.status_label, False, False, 0)
+        box.append(self.status_label)
         
-        self.add(box)
+        self.set_child(box)
         self.update_display()
     
     def update_display(self):
@@ -256,25 +244,21 @@ class HeadroomWindow(Gtk.ApplicationWindow):
         
         self.progress_bar.set_fraction(status['percent'] / 100)
         
-        # Color-code the progress bar with inline CSS
-        style_context = self.progress_bar.get_style_context()
-        css_provider = Gtk.CssProvider()
-        
+        # Color-code the progress bar
         if status['color'] == 'red':
-            css_data = b"progressbar progress { background-color: #e74c3c; }"
-        elif status['color'] == 'orange':
-            css_data = b"progressbar progress { background-color: #e67e22; }"
-        elif status['color'] == 'yellow':
-            css_data = b"progressbar progress { background-color: #f39c12; }"
+            self.progress_bar.add_css_class('error')
+        elif status['color'] == 'orange' or status['color'] == 'yellow':
+            self.progress_bar.add_css_class('warning')
         else:
-            css_data = b"progressbar progress { background-color: #27ae60; }"
+            self.progress_bar.add_css_class('success')
         
-        css_provider.load_from_data(css_data)
-        style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        
-        # Update breakdown - clear old labels
-        for child in self.breakdown_box.get_children():
+        # Update breakdown
+        # Clear old labels
+        child = self.breakdown_box.get_first_child()
+        while child:
+            next_child = child.get_next_sibling()
             self.breakdown_box.remove(child)
+            child = next_child
         
         # Add new breakdown
         for product in ['chat', 'code', 'cowork']:
@@ -286,8 +270,7 @@ class HeadroomWindow(Gtk.ApplicationWindow):
                     f"({data['weight']:.1f} units)"
                 )
                 label.set_xalign(0)
-                self.breakdown_box.pack_start(label, False, False, 0)
-                label.show()
+                self.breakdown_box.append(label)
         
         # Update reset time
         if status.get('session_reset'):
@@ -331,7 +314,7 @@ class HeadroomWindow(Gtk.ApplicationWindow):
         return True
 
 
-class HeadroomApp(Gtk.Application):
+class HeadroomApp(Adw.Application):
     """Main application"""
     
     def __init__(self):
@@ -365,7 +348,7 @@ class HeadroomApp(Gtk.Application):
             print("Running in window-only mode. Keep this window open to monitor usage.")
         
         # Show window on first activation
-        self.window.show_all()
+        self.window.present()
         
         # Update indicator regularly
         GLib.timeout_add_seconds(5, self.update_indicator)
@@ -457,13 +440,12 @@ class HeadroomApp(Gtk.Application):
         notification = Gio.Notification.new(title)
         notification.set_body(body)
         notification.set_priority(priority)
-        # Fixed: use proper notification ID (avoid recursion)
-        super().send_notification(f"usage-alert", notification)
+        self.send_notification(f"usage-{priority}", notification)
     
     def on_show_window(self, _widget):
         """Show the main window"""
         if self.window:
-            self.window.show_all()
+            self.window.present()
     
     def on_quick_sync(self, _widget):
         """Run claude-auto-sync"""
@@ -477,10 +459,10 @@ class HeadroomApp(Gtk.Application):
                 # Run sync in background
                 subprocess.Popen([str(auto_sync)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
-                # Show quick notification using parent class method
+                # Show quick notification
                 notification = Gio.Notification.new("Syncing Usage")
                 notification.set_body("Fetching latest usage from Claude...")
-                super().send_notification("sync", notification)
+                self.send_notification("sync", notification)
                 
                 # Update display after a delay
                 GLib.timeout_add_seconds(2, self.update_indicator)

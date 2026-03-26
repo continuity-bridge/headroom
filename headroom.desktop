@@ -2,7 +2,7 @@
 Type=Application
 Name=headroom - Claude Usage Monitor
 Comment=Monitor Claude usage limits
-Exec=/home/tallest/Devel/UncleTallest/organizations/continuity-bridge/limit-monitor/headroom/headroom.py
+Exec=/home/tallest/Devel/UncleTallest/organizations/continuity-bridge/headroom/headroom.py
 Icon=utilities-system-monitor
 Terminal=false
 Categories=Utility;System;
